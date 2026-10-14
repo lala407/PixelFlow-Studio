@@ -12,6 +12,7 @@
     "test:watch": "vitest",
     "test:cov": "vitest run --coverage",
     "e2e": "playwright test",
+    "fixtures": "node scripts/generate-fixtures.mjs",
     "format": "prettier --write .",
     "format:check": "prettier --check ."
   },
