@@ -1,7 +1,7 @@
-import { TechDemo } from './app/TechDemo'
+import { EditorShell } from './app/EditorShell'
 
 function App() {
-  return <TechDemo />
+  return <EditorShell />
 }
 
 export default App
