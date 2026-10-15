@@ -1,24 +1,21 @@
 /**
- * Demo 2 验证模块：像素读取 + 简单颜色统计（桶量化）
- * readPixels 依赖浏览器 Canvas；countTopColors 为纯函数，可在 jsdom 单测
+ * 颜色分析（Sprint 1 正式实现）
+ *
+ * 职责：缩放采样 → 桶量化 → 主色排序 → 组装 AnalysisResult
+ * 依赖：ColorSwatch / AnalysisResult / LoadedImage 从 domain/models/types.ts 导入
  */
-export interface ColorSwatch {
-  hex: string
-  r: number
-  g: number
-  b: number
-  proportion: number
-}
+import type { AnalysisResult, ColorSwatch, LoadedImage } from '../../domain/models/types'
 
 const ALPHA_THRESHOLD = 32
 const SAMPLE_MAX_SIDE = 256
+const TOP_K = 6
 
 function toHex(v: number): string {
   return v.toString(16).padStart(2, '0')
 }
 
 /** 纯函数：对 RGBA 像素数据做 4bit 桶量化，返回按占比排序的主色 */
-export function countTopColors(pixels: Uint8ClampedArray, topK = 5): ColorSwatch[] {
+export function countTopColors(pixels: Uint8ClampedArray, topK = TOP_K): ColorSwatch[] {
   const buckets = new Map<number, { count: number; r: number; g: number; b: number }>()
   let total = 0
   for (let i = 0; i < pixels.length; i += 4) {
@@ -47,7 +44,7 @@ export function countTopColors(pixels: Uint8ClampedArray, topK = 5): ColorSwatch
     .slice(0, topK)
 }
 
-/** 浏览器端：将位图缩放采样后读取像素（验证 getImageData 可用） */
+/** 将位图缩放采样后读取像素 */
 export async function readPixels(bitmap: ImageBitmap): Promise<Uint8ClampedArray> {
   const scale = Math.min(1, SAMPLE_MAX_SIDE / Math.max(bitmap.width, bitmap.height))
   const w = Math.max(1, Math.round(bitmap.width * scale))
@@ -60,4 +57,38 @@ export async function readPixels(bitmap: ImageBitmap): Promise<Uint8ClampedArray
   ctx.imageSmoothingEnabled = false
   ctx.drawImage(bitmap, 0, 0, w, h)
   return ctx.getImageData(0, 0, w, h).data
+}
+
+/** 对 LoadedImage 执行颜色分析，产出 AnalysisResult（capabilities 仅 color 部分） */
+export async function analyzeColor(img: LoadedImage): Promise<AnalysisResult> {
+  const pixels = img.bitmap
+    ? await readPixels(img.bitmap)
+    : await loadPixelsFromBlob(img)
+  const swatches = countTopColors(pixels, TOP_K)
+  return {
+    imageId: img.imageId,
+    imageWidth: img.width,
+    imageHeight: img.height,
+    dominantColors: swatches,
+    faceBoxes: [],
+    personBoxes: [],
+    objects: [],
+    capabilities: {
+      color: swatches.length > 0 ? 'ready' : 'failed',
+      face: 'unavailable',
+      segmentation: 'unavailable',
+    },
+    analyzedAt: Date.now(),
+    version: 1,
+  }
+}
+
+async function loadPixelsFromBlob(img: LoadedImage): Promise<Uint8ClampedArray> {
+  if (!img.blob) throw new Error('LoadedImage 无 blob 资源')
+  const bitmap = await createImageBitmap(img.blob)
+  try {
+    return await readPixels(bitmap)
+  } finally {
+    bitmap.close()
+  }
 }
